@@ -70,7 +70,7 @@ class TextSplitter():
     def _split_page(self, page: Dict[str, any], chunk_size: int = 300, chunk_overlap: int = 50) -> List[Dict[str, any]]:
         """Split page text into chunks. The original text includes markdown tables."""
         text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            model_name="gpt-4o",
+            encoding_name="o200k_base",
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap
         )

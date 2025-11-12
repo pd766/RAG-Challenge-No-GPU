@@ -14,6 +14,8 @@ from pydantic import BaseModel
 import google.generativeai as genai
 from copy import deepcopy
 from tenacity import retry, stop_after_attempt, wait_fixed
+import dashscope
+from http import HTTPStatus
 
 
 
@@ -367,8 +369,103 @@ class BaseGeminiProcessor:
             raise Exception(f"API request failed after retries: {str(e)}")
 
 
+class BaseQwenProcessor:
+    def __init__(self):
+        self.llm = self._set_up_llm()
+        self.default_model = 'qwen-flash'
+
+    def _set_up_llm(self):
+        load_dotenv()
+        api_key = os.getenv("QWEN_API_KEY")
+        dashscope.api_key = api_key
+        return dashscope.Generation
+
+    def send_message(
+        self,
+        model=None,
+        temperature=0.5,
+        seed=None,
+        system_content='You are a helpful assistant.',
+        human_content='Hello!',
+        is_structured=False,
+        response_format=None,
+        **kwargs
+    ):
+        if model is None:
+            model = self.default_model
+        
+        messages = [
+            {'role': 'system', 'content': system_content},
+            {'role': 'user', 'content': human_content}
+        ]
+
+        response = self.llm.call(
+            model=model,
+            messages=messages,
+            seed=seed,
+            temperature=temperature,
+            result_format='message',
+            **kwargs
+        )
+
+        if response.status_code == HTTPStatus.OK:
+            content = response.output.choices[0]['message']['content']
+            self.response_data = {
+                "model": model,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens
+            }
+            print(self.response_data)
+
+            if is_structured and response_format is not None:
+                try:
+                    repaired_json = repair_json(content)
+                    parsed_dict = json.loads(repaired_json)
+                    validated_data = response_format.model_validate(parsed_dict)
+                    content = validated_data.model_dump()
+                    return content
+                except Exception as err:
+                    print("Error processing structured response, attempting to reparse the response...")
+                    reparsed = self._reparse_response(content, system_content, response_format)
+                    return reparsed
+            
+            return content
+        else:
+            print('Request id: %s, Status code: %s, error code: %s, error message: %s' % (
+                response.request_id, response.status_code,
+                response.code, response.message
+            ))
+            return None
+
+    def _reparse_response(self, response, system_content, response_format):
+        user_prompt = prompts.AnswerSchemaFixPrompt.user_prompt.format(
+            system_prompt=system_content,
+            response=response
+        )
+        
+        reparsed_response = self.send_message(
+            system_content=prompts.AnswerSchemaFixPrompt.system_prompt,
+            human_content=user_prompt,
+            is_structured=False
+        )
+        
+        try:
+            repaired_json = repair_json(reparsed_response)
+            reparsed_dict = json.loads(repaired_json)
+            try:
+                validated_data = response_format.model_validate(reparsed_dict)
+                print("Reparsing successful!")
+                return validated_data.model_dump()
+            except Exception:
+                return reparsed_dict
+        except Exception as reparse_err:
+            print(f"Reparse failed with error: {reparse_err}")
+            print(f"Reparsed response: {reparsed_response}")
+            return response
+
+
 class APIProcessor:
-    def __init__(self, provider: Literal["openai", "ibm", "gemini"] ="openai"):
+    def __init__(self, provider: Literal["openai", "ibm", "gemini", "qwen"] ="qwen"):
         self.provider = provider.lower()
         if self.provider == "openai":
             self.processor = BaseOpenaiProcessor()
@@ -376,6 +473,8 @@ class APIProcessor:
             self.processor = BaseIBMAPIProcessor()
         elif self.provider == "gemini":
             self.processor = BaseGeminiProcessor()
+        elif self.provider == "qwen":
+            self.processor = BaseQwenProcessor()
 
     def send_message(
         self,

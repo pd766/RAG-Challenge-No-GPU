@@ -47,7 +47,7 @@ class LLMReranker:
         user_prompt = f'/nHere is the query:/n"{query}"/n/nHere is the retrieved text block:/n"""/n{retrieved_document}/n"""/n'
         
         completion = self.llm.beta.chat.completions.parse(
-            model="gpt-4o-mini-2024-07-18",
+            model="qwen-plus",
             temperature=0,
             messages=[
                 {"role": "system", "content": self.system_prompt_rerank_single_block},
@@ -71,7 +71,7 @@ class LLMReranker:
         )
 
         completion = self.llm.beta.chat.completions.parse(
-            model="gpt-4o-mini-2024-07-18",
+            model="qwen-plus",
             temperature=0,
             messages=[
                 {"role": "system", "content": self.system_prompt_rerank_multiple_blocks},

@@ -1,9 +1,0 @@
-# Rename this file to .env and put your own keys in it
-# You can ignore api keys for jina and gemini, if you don't plan to use them
-
-OPENAI_API_KEY=sk-proj-whzhp2I...
-
-GEMINI_API_KEY=AIzaS...
-
-# Jina Reranker v2 from https://jina.ai/reranker/
-JINA_API_KEY=jina_e37f9...

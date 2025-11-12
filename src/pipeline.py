@@ -5,6 +5,7 @@ import logging
 import os
 import json
 import pandas as pd
+from dotenv import load_dotenv # 导入 load_dotenv
 
 from src.pdf_parsing import PDFParser
 from src.parsed_reports_merging import PageTextPreparation
@@ -13,6 +14,7 @@ from src.ingestion import VectorDBIngestor
 from src.ingestion import BM25Ingestor
 from src.questions_processing import QuestionsProcessor
 from src.tables_serialization import TableSerializer
+from src.mineru_parser import MineruPDFParser
 
 @dataclass
 class PipelineConfig:
@@ -57,8 +59,8 @@ class RunConfig:
     pipeline_details: str = ""
     submission_file: bool = True
     full_context: bool = False
-    api_provider: str = "openai"
-    answering_model: str = "gpt-4o-mini-2024-07-18" #or "gpt-4o-2024-08-06"
+    api_provider: str = "qwen"
+    answering_model: str = "qwen-plus" #or "gpt-4o-2024-08-06"
     config_suffix: str = ""
 
 class Pipeline:
@@ -66,6 +68,12 @@ class Pipeline:
         self.run_config = run_config
         self.paths = self._initialize_paths(root_path, subset_name, questions_file_name, pdf_reports_dir_name)
         self._convert_json_to_csv_if_needed()
+        
+        load_dotenv() # 加载 .env 文件中的环境变量
+
+        self.mineru_api_token = os.getenv("MINERU_API_TOKEN") # 从环境变量获取 API Token
+        if not self.mineru_api_token:
+            print("MINERU_API_TOKEN 环境变量未设置。如果使用 Mineru 解析器，这将导致问题。") 
 
     def _initialize_paths(self, root_path: Path, subset_name: str, questions_file_name: str, pdf_reports_dir_name: str) -> PipelineConfig:
         """Initialize paths configuration based on run config settings"""
@@ -107,39 +115,36 @@ class Pipeline:
         parser.parse_and_export(input_doc_paths=[here() / "src/dummy_report.pdf"])
 
     def parse_pdf_reports_sequential(self):
+        """使用 Mineru API 顺序解析 PDF 报告"""
         logging.basicConfig(level=logging.DEBUG)
         
-        pdf_parser = PDFParser(
+        pdf_parser = MineruPDFParser(
+            api_token=self.mineru_api_token,
             output_dir=self.paths.parsed_reports_path,
+            debug_data_path=self.paths.parsed_reports_debug_path,
             csv_metadata_path=self.paths.subset_path
         )
-        pdf_parser.debug_data_path = self.paths.parsed_reports_debug_path
-            
+         
         pdf_parser.parse_and_export(doc_dir=self.paths.pdf_reports_dir)
         print(f"PDF reports parsed and saved to {self.paths.parsed_reports_path}")
 
     def parse_pdf_reports_parallel(self, chunk_size: int = 2, max_workers: int = 10):
-        """Parse PDF reports in parallel using multiple processes.
-        
-        Args:
-            chunk_size: Number of PDFs to process in each worker
-            num_workers: Number of parallel worker processes to use
-        """
+        """使用 Mineru API 批量解析 PDF 报告（Mineru API 本身就支持批处理）"""
         logging.basicConfig(level=logging.DEBUG)
         
-        pdf_parser = PDFParser(
+        # Mineru API 的 batch 接口本身就支持批量处理，所以这里直接使用
+        pdf_parser = MineruPDFParser(
+            api_token=self.mineru_api_token,
             output_dir=self.paths.parsed_reports_path,
+            debug_data_path=self.paths.parsed_reports_debug_path,
             csv_metadata_path=self.paths.subset_path
         )
-        pdf_parser.debug_data_path = self.paths.parsed_reports_debug_path
-
+        
         input_doc_paths = list(self.paths.pdf_reports_dir.glob("*.pdf"))
         
-        pdf_parser.parse_and_export_parallel(
-            input_doc_paths=input_doc_paths,
-            optimal_workers=max_workers,
-            chunk_size=chunk_size
-        )
+        # parse_and_export 方法已经实现了批量处理逻辑
+        pdf_parser.parse_and_export(input_doc_paths=input_doc_paths)
+        
         print(f"PDF reports parsed and saved to {self.paths.parsed_reports_path}")
 
     def serialize_tables(self, max_workers: int = 10):
@@ -153,6 +158,8 @@ class Pipeline:
     def merge_reports(self):
         """Merge complex JSON reports into a simpler structure with a list of pages, where all text blocks are combined into a single string."""
         ptp = PageTextPreparation(use_serialized_tables=self.run_config.use_serialized_tables)
+        print(f"DEBUG: parsed_reports_path: {self.paths.parsed_reports_path.resolve()}")
+        print(f"DEBUG: JSON files found: {list(self.paths.parsed_reports_path.glob('*.json'))}")
         _ = ptp.process_reports(
             reports_dir=self.paths.parsed_reports_path,
             output_dir=self.paths.merged_reports_path
@@ -286,7 +293,7 @@ preprocess_configs = {"ser_tab": RunConfig(use_serialized_tables=True),
 base_config = RunConfig(
     parallel_requests=10,
     submission_name="Ilia Ris v.0",
-    pipeline_details="Custom pdf parsing + vDB + Router + SO CoT; llm = GPT-4o-mini",
+    pipeline_details="Custom pdf parsing + vDB + Router + SO CoT; llm = Qwen",
     config_suffix="_base"
 )
 
@@ -294,8 +301,8 @@ parent_document_retrieval_config = RunConfig(
     parent_document_retrieval=True,
     parallel_requests=20,
     submission_name="Ilia Ris v.1",
-    pipeline_details="Custom pdf parsing + vDB + Router + Parent Document Retrieval + SO CoT; llm = GPT-4o",
-    answering_model="gpt-4o-2024-08-06",
+    pipeline_details="Custom pdf parsing + vDB + Router + Parent Document Retrieval + SO CoT; llm = Qwen",
+    answering_model="qwen-plus",
     config_suffix="_pdr"
 )
 
@@ -305,8 +312,8 @@ max_config = RunConfig(
     llm_reranking=True,
     parallel_requests=20,
     submission_name="Ilia Ris v.2",
-    pipeline_details="Custom pdf parsing + table serialization + vDB + Router + Parent Document Retrieval + reranking + SO CoT; llm = GPT-4o",
-    answering_model="gpt-4o-2024-08-06",
+    pipeline_details="Custom pdf parsing + table serialization + vDB + Router + Parent Document Retrieval + reranking + SO CoT; llm = Qwen",
+    answering_model="qwen-plus",
     config_suffix="_max"
 )
 
@@ -316,8 +323,8 @@ max_no_ser_tab_config = RunConfig(
     llm_reranking=True,
     parallel_requests=20,
     submission_name="Ilia Ris v.3",
-    pipeline_details="Custom pdf parsing + vDB + Router + Parent Document Retrieval + reranking + SO CoT; llm = GPT-4o",
-    answering_model="gpt-4o-2024-08-06",
+    pipeline_details="Custom pdf parsing + vDB + Router + Parent Document Retrieval + reranking + SO CoT; llm = Qwen",
+    answering_model="qwen-plus",
     config_suffix="_max_no_ser_tab"
 )
 

@@ -28,8 +28,12 @@ class PageTextPreparation:
         
         if reports_dir:
             reports_paths = list(reports_dir.glob('*.json'))
+        print(f"parsed_reports_merging process_reports: 共 {len(reports_paths)} 个文件")
         
-        for report_path in reports_paths:
+        for idx, report_path in enumerate(reports_paths, 1):
+            print(f"\n[INFO] 处理第 {idx}/{len(reports_paths)} 个文件")
+            print(f"[INFO] 文件路径: {report_path}")
+            
             with open(report_path, 'r', encoding='utf-8') as file:
                 report_data = json.load(file)
             
@@ -53,7 +57,45 @@ class PageTextPreparation:
         total_corrections = 0
         corrections_list = []
 
+        # 添加调试日志 - 显示当前处理的文件信息
+        file_name = self.report_data.get('metainfo', {}).get('sha1_name', 'UNKNOWN')
+        print(f"\n{'='*80}")
+        print(f"[DEBUG] 正在处理文件: {file_name}")
+        print(f"[DEBUG] report_data 的键: {self.report_data.keys()}")
+        print(f"[DEBUG] report_data['content'] 的类型: {type(self.report_data['content'])}")
+        
+        if isinstance(self.report_data["content"], list):
+            print(f"[DEBUG] ✓ content 是列表，长度: {len(self.report_data['content'])}")
+            if len(self.report_data["content"]) > 0:
+                print(f"[DEBUG]   第一个元素类型: {type(self.report_data['content'][0])}")
+                if isinstance(self.report_data['content'][0], dict):
+                    print(f"[DEBUG]   第一个元素的键: {self.report_data['content'][0].keys()}")
+        elif isinstance(self.report_data["content"], dict):
+            print(f"[ERROR] ✗ content 是字典而不是列表！")
+            print(f"[ERROR]   字典的键: {list(self.report_data['content'].keys())}")
+            print(f"[ERROR]   这个结构不正确，期望 content 应该是页面列表")
+            
+            # 检查是否有 chunks 键
+            if 'chunks' in self.report_data['content']:
+                chunks = self.report_data['content']['chunks']
+                print(f"[ERROR]   发现 'chunks' 键，包含 {len(chunks) if isinstance(chunks, list) else 'N/A'} 个元素")
+                if isinstance(chunks, list) and len(chunks) > 0:
+                    print(f"[ERROR]   chunks 的第一个元素: {chunks[0]}")
+            
+            print(f"[ERROR] 请检查文件: {file_name}")
+            print(f"{'='*80}\n")
+            raise ValueError(f"文件 {file_name} 的数据结构不正确：content 应该是列表，但实际是字典")
+        else:
+            print(f"[ERROR] content 既不是列表也不是字典，类型: {type(self.report_data['content'])}")
+            raise ValueError(f"文件 {file_name} 的数据结构不正确")
+
         for page_content in self.report_data["content"]:
+            print(f"[DEBUG] Processing page_content, type: {type(page_content)}")
+            if isinstance(page_content, str):
+                print(f"[DEBUG] page_content is a string: {page_content[:100]}...")
+            else:
+                print(f"[DEBUG] page_content keys: {page_content.keys() if isinstance(page_content, dict) else 'N/A'}")
+            
             page_number = page_content["page"]
             page_text = self.prepare_page_text(page_number)
             cleaned_text, corrections_count, corrections = self._clean_text(page_text)
@@ -322,7 +364,10 @@ class PageTextPreparation:
                     i += 1
                 continue
 
-            raise ValueError(f"Unknown block type: {block_type}")
+            # Skip unknown block types
+            print(f"⚠️ 遇到未知的 block type: {block_type}, 跳过此 block")
+            i += 1
+            continue
 
         return final_blocks
 

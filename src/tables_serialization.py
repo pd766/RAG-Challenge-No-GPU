@@ -118,7 +118,7 @@ class TableSerializer(BaseOpenaiProcessor):
         reponse_schema = TableSerialization.TableBlocksCollection
 
         answer_dict = self.send_message(
-            model='gpt-4o-mini-2024-07-18',
+            model='qwen-plus',
             temperature=0,
             system_content=system_prompt,
             human_content=user_prompt,

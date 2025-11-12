@@ -19,7 +19,7 @@ def download_models():
 @click.option('--max-workers', default=10, help='Number of parallel worker processes')
 def parse_pdfs(parallel, chunk_size, max_workers):
     """Parse PDF reports with optional parallel processing."""
-    root_path = Path.cwd()
+    root_path = Path.cwd() / "data" / "test_set" 
     pipeline = Pipeline(root_path)
     
     click.echo(f"Parsing PDFs (parallel={parallel}, chunk_size={chunk_size}, max_workers={max_workers})")
@@ -29,7 +29,7 @@ def parse_pdfs(parallel, chunk_size, max_workers):
 @click.option('--max-workers', default=10, help='Number of workers for table serialization')
 def serialize_tables(max_workers):
     """Serialize tables in parsed reports using parallel threading."""
-    root_path = Path.cwd()
+    root_path = Path.cwd() / "data" / "test_set"
     pipeline = Pipeline(root_path)
     
     click.echo(f"Serializing tables (max_workers={max_workers})...")
@@ -39,7 +39,7 @@ def serialize_tables(max_workers):
 @click.option('--config', type=click.Choice(['ser_tab', 'no_ser_tab']), default='no_ser_tab', help='Configuration preset to use')
 def process_reports(config):
     """Process parsed reports through the pipeline stages."""
-    root_path = Path.cwd()
+    root_path = Path.cwd() / "data" / "test_set"
     run_config = preprocess_configs[config]
     pipeline = Pipeline(root_path, run_config=run_config)
     
@@ -50,7 +50,7 @@ def process_reports(config):
 @click.option('--config', type=click.Choice(['base', 'pdr', 'max', 'max_no_ser_tab', 'max_nst_o3m', 'max_st_o3m', 'ibm_llama70b', 'ibm_llama8b', 'gemini_thinking']), default='base', help='Configuration preset to use')
 def process_questions(config):
     """Process questions using the pipeline."""
-    root_path = Path.cwd()
+    root_path = Path.cwd() / "data" / "test_set"
     run_config = configs[config]
     pipeline = Pipeline(root_path, run_config=run_config)
     

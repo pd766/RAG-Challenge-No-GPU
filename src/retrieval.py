@@ -5,11 +5,11 @@ from rank_bm25 import BM25Okapi
 import pickle
 from pathlib import Path
 import faiss
-from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import numpy as np
 from src.reranking import LLMReranker
+from openai import OpenAI
 
 _log = logging.getLogger(__name__)
 
@@ -78,30 +78,47 @@ class BM25Retriever:
 
 
 class VectorRetriever:
-    def __init__(self, vector_db_dir: Path, documents_dir: Path):
+    def __init__(self, vector_db_dir: Path, documents_dir: Path, model_name: str = "text-embedding-v3"):
         self.vector_db_dir = vector_db_dir
         self.documents_dir = documents_dir
         self.all_dbs = self._load_dbs()
-        self.llm = self._set_up_llm()
+        self.model_name = model_name
+        self.client = self._set_up_client()
 
-    def _set_up_llm(self):
+    def _set_up_client(self):
+        """Initialize Alibaba Cloud Qwen API client."""
         load_dotenv()
-        llm = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            timeout=None,
-            max_retries=2
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "请在 .env 文件中设置 DASHSCOPE_API_KEY 环境变量\n"
+                "获取方式：https://help.aliyun.com/zh/model-studio/getting-started/first-api-call-to-qwen"
             )
-        return llm
+        
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            timeout=60.0,
+            max_retries=2
+        )
+        print(f"已初始化阿里云通义千问 Embedding API 用于检索，模型: {self.model_name}")
+        return client
     
     @staticmethod
-    def set_up_llm():
+    def set_up_client(model_name: str = "text-embedding-v3"):
+        """Static method to initialize API client."""
         load_dotenv()
-        llm = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            timeout=None,
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            raise ValueError("请在 .env 文件中设置 DASHSCOPE_API_KEY 环境变量")
+        
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            timeout=60.0,
             max_retries=2
-            )
-        return llm
+        )
+        return client, model_name
 
     def _load_dbs(self):
         all_dbs = []
@@ -141,12 +158,33 @@ class VectorRetriever:
         return all_dbs
 
     @staticmethod
-    def get_strings_cosine_similarity(str1, str2):
-        llm = VectorRetriever.set_up_llm()
-        embeddings = llm.embeddings.create(input=[str1, str2], model="text-embedding-3-large")
-        embedding1 = embeddings.data[0].embedding
-        embedding2 = embeddings.data[1].embedding
-        similarity_score = np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))
+    def get_strings_cosine_similarity(str1, str2, model_name: str = "text-embedding-v3"):
+        """
+        Calculate cosine similarity between two strings using Qwen Embedding API.
+        
+        Args:
+            str1: First string
+            str2: Second string
+            model_name: Name of the Qwen embedding model to use
+            
+        Returns:
+            Cosine similarity score (0-1)
+        """
+        client, model = VectorRetriever.set_up_client(model_name)
+        
+        # 调用 API 获取两个字符串的 embeddings
+        response = client.embeddings.create(
+            model=model,
+            input=[str1, str2],
+            encoding_format="float"
+        )
+        
+        embedding1 = np.array(response.data[0].embedding)
+        embedding2 = np.array(response.data[1].embedding)
+        
+        # 计算余弦相似度
+        similarity_score = float(np.dot(embedding1, embedding2) / 
+                                (np.linalg.norm(embedding1) * np.linalg.norm(embedding2)))
         similarity_score = round(similarity_score, 4)
         return similarity_score
 
@@ -173,12 +211,14 @@ class VectorRetriever:
         
         actual_top_n = min(top_n, len(chunks))
         
-        embedding = self.llm.embeddings.create(
-            input=query,
-            model="text-embedding-3-large"
+        # Generate query embedding using Qwen API
+        response = self.client.embeddings.create(
+            model=self.model_name,
+            input=[query],
+            encoding_format="float"
         )
-        embedding = embedding.data[0].embedding
-        embedding_array = np.array(embedding, dtype=np.float32).reshape(1, -1)
+        embedding = response.data[0].embedding
+        embedding_array = np.array([embedding], dtype=np.float32)
         distances, indices = vector_db.search(x=embedding_array, k=actual_top_n)
     
         retrieval_results = []
