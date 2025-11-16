@@ -399,14 +399,23 @@ class BaseQwenProcessor:
             {'role': 'user', 'content': human_content}
         ]
 
-        response = self.llm.call(
-            model=model,
-            messages=messages,
-            seed=seed,
-            temperature=temperature,
-            result_format='message',
-            **kwargs
-        )
+        # Build parameters for API call
+        call_params = {
+            'model': model,
+            'messages': messages,
+            'seed': seed,
+            'temperature': temperature,
+            'result_format': 'message',
+        }
+        
+        # Add response_format if structured output is requested
+        if is_structured and response_format is not None:
+            call_params['response_format'] = {'type': 'json_object'}
+        
+        # Merge with any additional kwargs
+        call_params.update(kwargs)
+
+        response = self.llm.call(**call_params)
 
         if response.status_code == HTTPStatus.OK:
             content = response.output.choices[0]['message']['content']
@@ -462,6 +471,22 @@ class BaseQwenProcessor:
             print(f"Reparse failed with error: {reparse_err}")
             print(f"Reparsed response: {reparsed_response}")
             return response
+
+    @staticmethod
+    def count_tokens(string, encoding_name="o200k_base"):
+        """Count tokens in a string using tiktoken encoding.
+        
+        Args:
+            string: The string to count tokens for
+            encoding_name: The encoding to use (default: o200k_base)
+            
+        Returns:
+            int: Number of tokens in the string
+        """
+        encoding = tiktoken.get_encoding(encoding_name)
+        tokens = encoding.encode(string)
+        token_count = len(tokens)
+        return token_count
 
 
 class APIProcessor:
@@ -717,6 +742,243 @@ class AsyncOpenaiProcessor:
             with open(save_filepath, "w") as f:
                 for result in sorted_results:
                     json_string = json.dumps(result)
+                    f.write(json_string + "\n")
+            
+        return validated_data_list
+
+
+class AsyncQwenProcessor:
+    
+    def __init__(self):
+        """初始化 Qwen 处理器"""
+        load_dotenv()
+        self.api_key = os.getenv("QWEN_API_KEY")
+        dashscope.api_key = self.api_key
+    
+    def _get_unique_filepath(self, base_filepath):
+        """Helper method to get unique filepath"""
+        if not os.path.exists(base_filepath):
+            return base_filepath
+        
+        base, ext = os.path.splitext(base_filepath)
+        counter = 1
+        while os.path.exists(f"{base}_{counter}{ext}"):
+            counter += 1
+        return f"{base}_{counter}{ext}"
+
+    async def _call_qwen_api_async(self, model, messages, temperature, seed, enable_json_format=False):
+        """异步调用 Qwen API
+        
+        Args:
+            model: 模型名称
+            messages: 消息列表
+            temperature: 温度参数
+            seed: 随机种子
+            enable_json_format: 是否启用 JSON 格式输出
+        """
+        try:
+            call_params = {
+                'model': model,
+                'messages': messages,
+                'seed': seed,
+                'temperature': temperature,
+                'result_format': 'message'
+            }
+            
+            # Add response_format if JSON format is requested
+            if enable_json_format:
+                call_params['response_format'] = {'type': 'json_object'}
+            
+            response = await asyncio.to_thread(
+                dashscope.Generation.call,
+                **call_params
+            )
+            return response
+        except Exception as e:
+            print(f"[ERROR] Qwen API call failed: {e}")
+            return None
+
+    async def _process_single_request(self, request, response_format, semaphore):
+        """处理单个请求"""
+        async with semaphore:
+            try:
+                messages = request['messages']
+                enable_json = request.get('enable_json_format', False)
+                response = await self._call_qwen_api_async(
+                    model=request['model'],
+                    messages=messages,
+                    temperature=request['temperature'],
+                    seed=request['seed'],
+                    enable_json_format=enable_json
+                )
+                
+                
+                
+                if response and response.status_code == HTTPStatus.OK:
+                    content = response.output.choices[0]['message']['content']
+                    # Parse structured output
+                    try:
+                        answer_parsed = json.loads(content)
+                        answer = response_format(**answer_parsed).model_dump()
+                    except Exception as e:
+                        print(f"[ERROR] Failed to parse answer JSON. Error: {e}")
+                        # Try to repair JSON
+                        try:
+                            repaired_json = repair_json(content)
+                            answer_parsed = json.loads(repaired_json)
+                            answer = response_format(**answer_parsed).model_dump()
+                        except:
+                            answer = ""
+                    
+                    return {
+                        'request': request,
+                        'response': response,
+                        'answer': answer,
+                        'metadata': request['metadata']
+                    }
+                else:
+                    error_msg = f"API Error: {response.code if response else 'Unknown'}"
+                    print(f"[ERROR] {error_msg}")
+                    return {
+                        'request': request,
+                        'response': None,
+                        'answer': "",
+                        'metadata': request['metadata']
+                    }
+            except Exception as e:
+                print(f"[ERROR] Processing request failed: {e}")
+                return {
+                    'request': request,
+                    'response': None,
+                    'answer': "",
+                    'metadata': request['metadata']
+                }
+
+    async def process_structured_ouputs_requests(
+        self,
+        model="qwen-flash",
+        temperature=0.5,
+        seed=None,
+        system_content="You are a helpful assistant.",
+        queries=None,
+        response_format=None,
+        requests_filepath='./temp_async_llm_requests.jsonl',
+        save_filepath='./temp_async_llm_results.jsonl',
+        preserve_requests=False,
+        preserve_results=True,
+        max_concurrent_requests=100,
+        progress_callback=None
+    ):
+        """
+        异步处理结构化输出请求
+        
+        Args:
+            model: Qwen 模型名称
+            temperature: 温度参数
+            seed: 随机种子
+            system_content: 系统提示词
+            queries: 查询列表
+            response_format: Pydantic 响应格式
+            requests_filepath: 请求文件路径
+            save_filepath: 结果保存路径
+            preserve_requests: 是否保留请求文件
+            preserve_results: 是否保留结果文件
+            max_concurrent_requests: 最大并发请求数
+            progress_callback: 进度回调函数
+        
+        Returns:
+            List[Dict]: 验证后的数据列表
+        """
+        if queries is None:
+            queries = []
+            
+        # Create requests for jsonl
+        jsonl_requests = []
+        for idx, query in enumerate(queries):
+            request = {
+                "model": model,
+                "temperature": temperature,
+                "seed": seed,
+                "messages": [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": query},
+                ],
+                'metadata': {'original_index': idx},
+                'enable_json_format': True  # Enable JSON format for structured outputs
+            }
+            jsonl_requests.append(request)
+            
+        # Get unique filepaths if files already exist
+        requests_filepath = self._get_unique_filepath(requests_filepath)
+        save_filepath = self._get_unique_filepath(save_filepath)
+
+        # Write requests to JSONL file
+        with open(requests_filepath, "w") as f:
+            for request in jsonl_requests:
+                json_string = json.dumps(request)
+                f.write(json_string + "\n")
+
+        # Process API requests with concurrency control
+        total_requests = len(jsonl_requests)
+        semaphore = asyncio.Semaphore(max_concurrent_requests)
+        
+        # Create tasks for all requests
+        tasks = []
+        for request in jsonl_requests:
+            task = self._process_single_request(request, response_format, semaphore)
+            tasks.append(task)
+        
+        # Process all requests and update progress
+        results = []
+        for i, coro in enumerate(asyncio.as_completed(tasks)):
+            result = await coro
+            results.append(result)
+            
+            # Write result to file immediately
+            with open(save_filepath, "a") as f:
+                json_string = json.dumps([
+                    result['request'],
+                    {
+                        'choices': [{'message': {'content': json.dumps(result['answer']) if result['answer'] else ""}}],
+                        'finish_reason': 'stop' if result['answer'] else 'error'
+                    } if result['response'] else {},
+                    result['metadata']
+                ])
+                f.write(json_string + "\n")
+            
+            # Call progress callback
+            if progress_callback:
+                progress_callback()
+
+        # Sort results by original index
+        results_sorted = sorted(results, key=lambda x: x['metadata']['original_index'])
+        
+        # Build validated data list
+        validated_data_list = []
+        for result in results_sorted:
+            validated_data_list.append({
+                'question': result['request']['messages'],
+                'answer': result['answer']
+            })
+
+        # Clean up or preserve files
+        if not preserve_requests:
+            os.remove(requests_filepath)
+
+        if not preserve_results:
+            os.remove(save_filepath)
+        else:
+            # Rewrite results file in sorted order
+            with open(save_filepath, "w") as f:
+                for result in results_sorted:
+                    json_string = json.dumps([
+                        result['request'],
+                        {
+                            'choices': [{'message': {'content': json.dumps(result['answer']) if result['answer'] else ""}}],
+                            'finish_reason': 'stop' if result['answer'] else 'error'
+                        } if result['response'] else {},
+                        result['metadata']
+                    ])
                     f.write(json_string + "\n")
             
         return validated_data_list

@@ -171,14 +171,11 @@ class QuestionsProcessor:
         company_names = sorted(self.companies_df['company_name'].unique(), key=len, reverse=True)
         
         for company in company_names:
-            escaped_company = re.escape(company)
-            
-            pattern = rf'{escaped_company}(?:\W|$)'
-            
-            if re.search(pattern, question_text, re.IGNORECASE):
+            # 简单地检查公司名称是否在问题中出现
+            if company in question_text:
                 found_companies.append(company)
-                question_text = re.sub(pattern, '', question_text, flags=re.IGNORECASE)
-        
+                question_text = question_text.replace(company, '', 1)
+            
         return found_companies
 
     def process_question(self, question: str, schema: str):
@@ -439,7 +436,7 @@ class QuestionsProcessor:
                 with open(output_file, 'w', encoding='utf-8') as file:
                     json.dump(submission, file, ensure_ascii=False, indent=2)
 
-    def process_all_questions(self, output_path: str = 'questions_with_answers.json', team_email: str = "79250515615@yandex.com", submission_name: str = "Ilia_Ris SO CoT + Parent Document Retrieval", submission_file: bool = False, pipeline_details: str = ""):
+    def process_all_questions(self, output_path: str = 'questions_with_answers.json', team_email: str = "16818743@qq.com", submission_name: str = "Wei PD SO CoT + Parent Document Retrieval", submission_file: bool = False, pipeline_details: str = ""):
         result = self.process_questions_list(
             self.questions,
             output_path,

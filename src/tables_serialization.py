@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from typing import Optional, List, Union, Literal
 from pydantic import BaseModel, Field
 from openai import OpenAI
-from src.api_requests import BaseOpenaiProcessor, AsyncOpenaiProcessor
+from src.api_requests import BaseQwenProcessor, AsyncQwenProcessor
 import tiktoken
 from tqdm import tqdm
 import logging
@@ -30,7 +30,7 @@ def process_messages():
         level, msg = message_queue.get_nowait()
         tqdm.write(msg)
 
-class TableSerializer(BaseOpenaiProcessor):
+class TableSerializer(BaseQwenProcessor):
     def __init__(self, preserve_temp_files: bool = True):
         super().__init__()
         self.preserve_temp_files = preserve_temp_files
@@ -114,8 +114,14 @@ class TableSerializer(BaseOpenaiProcessor):
         if context_after:
             user_prompt += f'\n\nHere is additional text after the table that might be relevant (or not):\n"""{context_after}"""'
         
-        system_prompt = TableSerialization.system_prompt
-        reponse_schema = TableSerialization.TableBlocksCollection
+        response_schema = TableSerialization.TableBlocksCollection
+        
+        # Build enhanced system prompt with JSON schema
+        system_prompt = (
+            f"{TableSerialization.system_prompt}\n\n"
+            f"You MUST respond with ONLY a valid JSON object (no markdown, no explanations, no additional text).\n"
+            f"The JSON must follow this exact schema:\n{json.dumps(response_schema.model_json_schema(), indent=2)}"
+        )
 
         answer_dict = self.send_message(
             model='qwen-plus',
@@ -123,10 +129,10 @@ class TableSerializer(BaseOpenaiProcessor):
             system_content=system_prompt,
             human_content=user_prompt,
             is_structured=True,
-            response_format=reponse_schema
+            response_format=response_schema
         )
 
-        input_message = user_prompt + system_prompt + str(reponse_schema.schema())
+        input_message = user_prompt + system_prompt + str(response_schema.schema())
         input_tokens = self.count_tokens(input_message)
         output_tokens = self.count_tokens(str(answer_dict))
 
@@ -196,15 +202,22 @@ class TableSerializer(BaseOpenaiProcessor):
             
             queries.append(query)
 
-        results = await AsyncOpenaiProcessor().process_structured_ouputs_requests(
-            model='gpt-4o-mini-2024-07-18',
+        # Build enhanced system prompt with JSON schema
+        response_schema = TableSerialization.TableBlocksCollection
+        enhanced_system_prompt = (
+            f"{TableSerialization.system_prompt}\n\n"
+            f"You MUST respond with ONLY a valid JSON object (no markdown, no explanations, no additional text).\n"
+            f"The JSON must follow this exact schema:\n{json.dumps(response_schema.model_json_schema(), indent=2)}"
+        )
+
+        results = await AsyncQwenProcessor().process_structured_ouputs_requests(
+            model='qwen-plus',
             temperature=0,
-            system_content=TableSerialization.system_prompt,
+            system_content=enhanced_system_prompt,
             queries=queries,
-            response_format=TableSerialization.TableBlocksCollection,
+            response_format=response_schema,
             preserve_requests=False,
             preserve_results=False,
-            logging_level=20,
             requests_filepath=requests_filepath,
             save_filepath=results_filepath,
         )

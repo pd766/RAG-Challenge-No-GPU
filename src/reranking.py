@@ -39,8 +39,17 @@ class LLMReranker:
         self.schema_for_multiple_blocks = prompts.RetrievalRankingMultipleBlocks
       
     def set_up_llm(self):
-        load_dotenv()
-        llm = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # 使用阿里云通义千问的兼容接口
+        api_key = os.getenv("DASHSCOPE_API_KEY")  # 改用 DASHSCOPE_API_KEY
+        if not api_key:
+            raise ValueError("请在 .env 文件中设置 DASHSCOPE_API_KEY 环境变量")
+        
+        llm = OpenAI(
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # 添加这行
+            timeout=60.0,
+            max_retries=2
+        )
         return llm
     
     def get_rank_for_single_block(self, query, retrieved_document):

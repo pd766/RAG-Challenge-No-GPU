@@ -1,22 +1,18 @@
 [
     {
-      "text": "Did Mercia Asset Management PLC mention any mergers or acquisitions in the annual report?",
+      "text": "美团有没有回购股份的操作?",
       "kind": "boolean"
     },
     {
-      "text": "According to the annual report, what is the Operating margin (%) for Tradition (within the last period or at the end of the last period)? If data is not available, return 'N/A'.",
+      "text": "腾讯控股6月份回购了多少股份？",
       "kind": "number"
     },
     {
-      "text": "Did TSX_Y announce a share buyback plan in the annual report?",
-      "kind": "boolean"
-    },
-    {
-      "text": "What was the largest single spending of CrossFirst Bank on executive compensation in USD?",
+      "text": "腾讯控股在投资中所花费最多的项目名称是什么?",
       "kind": "name"
     },
     {
-      "text": "Did Holley Inc. mention any mergers or acquisitions in the annual report?",
-      "kind": "boolean"
+      "text": "小米上半年每股收益是多少？",
+      "kind": "number"
     }
   ]

@@ -431,8 +431,85 @@ class PageTextPreparation:
             if t.get("table_id") == table_id:
                 if self.use_serialized_tables:
                     return self._get_serialized_table_text(t, self.serialized_tables_instead_of_markdown)
-                return t.get("markdown", "")
+                
+                # 优先使用markdown，但如果markdown为空或质量差，则使用html
+                markdown_content = t.get("markdown", "").strip()
+                html_content = t.get("html", "")
+                
+                # 检查markdown是否为空或只包含空单元格
+                if not markdown_content or self._is_markdown_empty(markdown_content):
+                    if html_content:
+                        # 使用html并转换为更易读的格式
+                        return self._html_to_readable_text(html_content)
+                    return ""
+                
+                return markdown_content
         raise ValueError(f"Table with ID={table_id} not found in report_data!")
+    
+    def _is_markdown_empty(self, markdown_content):
+        """检查markdown表格是否为空或只包含空单元格或不完整"""
+        lines = markdown_content.strip().split('\n')
+        if not lines:
+            return True
+        
+        # 检查每行的列数
+        col_counts = []
+        for line in lines:
+            if '---' in line:  # 跳过markdown表格分隔行
+                continue
+            cols = [c.strip() for c in line.split('|')]
+            # 移除首尾空字符串（markdown表格的|开头和结尾）
+            cols = [c for c in cols if c]
+            col_counts.append(len(cols))
+        
+        if not col_counts:
+            return True
+        
+        # 如果所有行都只有1列或0列，认为是不完整的表格
+        max_cols = max(col_counts) if col_counts else 0
+        if max_cols <= 1:
+            return True
+        
+        # 检查是否大部分内容都是空的
+        all_text = ''.join([c for line in lines for c in line.split('|')])
+        all_text = all_text.replace('-', '').replace('|', '').strip()
+        if len(all_text) < 10:
+            return True
+        
+        return False
+    
+    def _html_to_readable_text(self, html_content):
+        """将HTML表格转换为易读的文本格式"""
+        import re
+        from html import unescape
+        
+        # 移除HTML标签但保留内容
+        text = html_content
+        
+        # 处理表格行
+        text = re.sub(r'</tr>', '\n', text)
+        text = re.sub(r'</td>', ' | ', text)
+        text = re.sub(r'</th>', ' | ', text)
+        
+        # 移除所有HTML标签
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # HTML解码
+        text = unescape(text)
+        
+        # 清理多余的空白
+        lines = []
+        for line in text.split('\n'):
+            line = line.strip()
+            if line and line != '|':
+                # 清理多余的分隔符
+                line = re.sub(r'\s*\|\s*\|', ' | ', line)
+                line = re.sub(r'^\s*\|\s*', '', line)
+                line = re.sub(r'\s*\|\s*$', '', line)
+                if line:
+                    lines.append(line)
+        
+        return '\n'.join(lines)
     
     def _get_serialized_table_text(self, table, serialized_tables_instead_of_markdown):
         """Convert serialized table format to text string.

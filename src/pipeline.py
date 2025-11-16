@@ -54,8 +54,8 @@ class RunConfig:
     llm_reranking_sample_size: int = 30
     top_n_retrieval: int = 10
     parallel_requests: int = 10
-    team_email: str = "79250515615@yandex.com"
-    submission_name: str = "Ilia_Ris vDB + SO CoT"
+    team_email: str = "16818743@qq.com"
+    submission_name: str = "Wei PD vDB + SO CoT"
     pipeline_details: str = ""
     submission_file: bool = True
     full_context: bool = False
@@ -114,22 +114,9 @@ class Pipeline:
         parser = PDFParser(output_dir=here())
         parser.parse_and_export(input_doc_paths=[here() / "src/dummy_report.pdf"])
 
-    def parse_pdf_reports_sequential(self):
-        """使用 Mineru API 顺序解析 PDF 报告"""
-        logging.basicConfig(level=logging.DEBUG)
-        
-        pdf_parser = MineruPDFParser(
-            api_token=self.mineru_api_token,
-            output_dir=self.paths.parsed_reports_path,
-            debug_data_path=self.paths.parsed_reports_debug_path,
-            csv_metadata_path=self.paths.subset_path
-        )
-         
-        pdf_parser.parse_and_export(doc_dir=self.paths.pdf_reports_dir)
-        print(f"PDF reports parsed and saved to {self.paths.parsed_reports_path}")
 
-    def parse_pdf_reports_parallel(self, chunk_size: int = 2, max_workers: int = 10):
-        """使用 Mineru API 批量解析 PDF 报告（Mineru API 本身就支持批处理）"""
+    def parse_pdf_reports_parallel(self):
+        """使用 Mineru API 批量解析 PDF 报告（Mineru API 本身就支持批处理,只需在api限额以内）"""
         logging.basicConfig(level=logging.DEBUG)
         
         # Mineru API 的 batch 接口本身就支持批量处理，所以这里直接使用
@@ -208,11 +195,9 @@ class Pipeline:
         bm25_ingestor.process_reports(input_dir, output_file)
         print(f"BM25 database created at {output_file}")
     
-    def parse_pdf_reports(self, parallel: bool = True, chunk_size: int = 2, max_workers: int = 10):
-        if parallel:
-            self.parse_pdf_reports_parallel(chunk_size=chunk_size, max_workers=max_workers)
-        else:
-            self.parse_pdf_reports_sequential()
+    def parse_pdf_reports(self):
+        self.parse_pdf_reports_parallel()
+
     
     def process_parsed_reports(self):
         """Process already parsed PDF reports through the pipeline:
@@ -291,6 +276,7 @@ preprocess_configs = {"ser_tab": RunConfig(use_serialized_tables=True),
                       "no_ser_tab": RunConfig(use_serialized_tables=False)}
 
 base_config = RunConfig(
+    use_serialized_tables=False,
     parallel_requests=10,
     submission_name="Ilia Ris v.0",
     pipeline_details="Custom pdf parsing + vDB + Router + SO CoT; llm = Qwen",

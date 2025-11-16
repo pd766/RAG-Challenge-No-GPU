@@ -14,16 +14,13 @@ def download_models():
     Pipeline.download_docling_models()
 
 @cli.command()
-@click.option('--parallel/--sequential', default=True, help='Run parsing in parallel or sequential mode')
-@click.option('--chunk-size', default=2, help='Number of PDFs to process in each worker')
-@click.option('--max-workers', default=10, help='Number of parallel worker processes')
-def parse_pdfs(parallel, chunk_size, max_workers):
+def parse_pdfs():
     """Parse PDF reports with optional parallel processing."""
     root_path = Path.cwd() / "data" / "test_set" 
     pipeline = Pipeline(root_path)
     
-    click.echo(f"Parsing PDFs (parallel={parallel}, chunk_size={chunk_size}, max_workers={max_workers})")
-    pipeline.parse_pdf_reports(parallel=parallel, chunk_size=chunk_size, max_workers=max_workers)
+    click.echo(f"Parsing PDFs")
+    pipeline.parse_pdf_reports()
 
 @cli.command()
 @click.option('--max-workers', default=10, help='Number of workers for table serialization')
