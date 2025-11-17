@@ -6,9 +6,9 @@
 
 ### 项目背景
 
-本项目源于对 RAG（检索增强生成）技术的学习需求。当我们发现 [Ilya Rice (Ilya Ryabov)](https://github.com/IlyaRice) 创建的这个优秀的 RAG Challenge 获奖解决方案后，意识到原版项目对本地机器的性能要求较高，特别是需要 GPU 来进行 PDF 解析（原作者使用的是 RTX 4090）。
+本项目源于对 RAG（检索增强生成）技术的研究需求。当我发现 [Ilya Rice (Ilya Ryabov)](https://github.com/IlyaRice) 创建的这个优秀的 RAG Challenge 获奖解决方案后，意识到原版项目对本地机器的性能要求较高，特别是需要 GPU 来进行 PDF 解析（原作者使用的是 RTX 4090）。
 
-**为了让更多没有高性能 GPU 的学习者也能运行和学习这个优秀的 RAG 项目，我们进行了必要的修改：**
+**为了让更多没有高性能 GPU 的小伙伴也能运行和研究这个优秀的 RAG 项目，我进行了必要的修改：**
 
 - **替换了 PDF 解析方案**：将原版的 Mockling 本地解析（需要 GPU）改为使用 [Mineru API](https://www.mineru.com/)，使得 PDF 解析过程可以通过 API 完成，无需本地 GPU。
 - **适配了向量化模型**：使用千问的 text-embedding-v3 模型进行向量化，无需本地部署模型。
@@ -44,7 +44,7 @@
 - 您需要自己的 OpenAI/Gemini、Mineru 和 Qwen 的 API 密钥。
 - ✨ **无需 GPU**：本修改版通过使用 API 服务替代了本地 GPU 密集型处理。
 
-如果您正在寻找生产就绪的代码，这不是。但如果您想探索不同的 RAG 技术及其实现，并且在没有 GPU 的情况下学习——请查看！
+如果您正在寻找生产就绪的代码，这不是。但如果您想探索不同的 RAG 技术及其实现，并且在没有 GPU 的情况下使用——请查看！
 
 ## 主要修改
 
